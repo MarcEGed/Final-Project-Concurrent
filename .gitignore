@@ -1,0 +1,14 @@
+# Ignore node modules everywhere
+node_modules/
+**/node_modules/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS / tooling
+.DS_Store
+.vscode/
+uploads/
+outputs/
