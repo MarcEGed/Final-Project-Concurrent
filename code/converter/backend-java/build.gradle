@@ -1,0 +1,39 @@
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '3.3.4'
+    id 'io.spring.dependency-management' version '1.1.6'
+}
+
+group = 'com.threadconv'
+version = '1.0.0'
+
+java {
+    // Use whatever JDK is available (23 on this machine) but target Java 21 bytecode
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // Spring Boot — HTTP server, file upload, scheduling, CORS
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+
+    // Socket.IO server — keeps the existing React socket.io-client working
+    implementation 'com.corundumstudio.socketio:netty-socketio:2.0.6'
+
+    // JSON — bundled with spring-boot-starter-web (jackson-databind)
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+}
+
+// Fat JAR — includes all runtime deps so the app runs with: java -jar build/libs/threadconv-1.0.0.jar
+tasks.named('bootJar') {
+    archiveFileName = 'threadconv.jar'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
