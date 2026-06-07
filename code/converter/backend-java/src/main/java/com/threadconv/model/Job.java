@@ -16,6 +16,7 @@ public class Job {
     private final String targetFormat;
     private final long   fileSize;
     private final long   createdAt;
+    private final String contentKey;  // SHA-256(bytes) + ":" + targetFormat — used for deduplication
 
     // ── Mutable state (written by worker thread, read by HTTP threads) ────────
     private volatile JobStatus status          = JobStatus.QUEUED;
@@ -27,7 +28,7 @@ public class Job {
 
     public Job(String jobId, String originalName, String inputPath,
                String outputPath, String outputFilename,
-               String targetFormat, long fileSize) {
+               String targetFormat, long fileSize, String contentKey) {
         this.jobId          = jobId;
         this.originalName   = originalName;
         this.inputPath      = inputPath;
@@ -36,6 +37,7 @@ public class Job {
         this.targetFormat   = targetFormat;
         this.fileSize       = fileSize;
         this.createdAt      = System.currentTimeMillis();
+        this.contentKey     = contentKey;
     }
 
     // ── Getters ───────────────────────────────────────────────────────────────
@@ -47,6 +49,7 @@ public class Job {
     public String    getTargetFormat()   { return targetFormat; }
     public long      getFileSize()       { return fileSize; }
     public long      getCreatedAt()      { return createdAt; }
+    public String    getContentKey()     { return contentKey; }
     public JobStatus getStatus()         { return status; }
     public int       getProgress()       { return progress; }
     public String    getProgressMessage(){ return progressMessage; }

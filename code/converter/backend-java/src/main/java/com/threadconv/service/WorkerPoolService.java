@@ -1,45 +1,37 @@
 package com.threadconv.service;
 
-import com.threadconv.converter.ConversionTask;
+import com.threadconv.client.WorkerClient;
 import com.threadconv.model.Job;
 import com.threadconv.model.JobStatus;
-import jakarta.annotation.PreDestroy;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.io.File;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.*;
-import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * Manages a bounded ThreadPoolExecutor (Week 5 — ExecutorService, bounded
- * queues, backpressure).
+ * Dispatches conversion jobs to the Worker service over HTTP and tracks
+ * aggregate metrics for /api/stats.
  *
- * Concurrency guarantees:
- *  - MAX_QUEUE_CAPACITY: hard limit; beyond this the API returns HTTP 503
- *    (intentional overload behaviour, not silent dropping)
- *  - Worker count: capped at (CPU cores - 1), minimum 2, to leave one core
- *    free for the HTTP-request threads
- *  - Retry: failed jobs are resubmitted up to MAX_ATTEMPTS before being
- *    marked FAILED permanently
- *  - Metrics: AtomicLong counters + a bounded deque of recent latency samples
- *    used to compute p50/p95/p99 on demand
- *  - Graceful shutdown: @PreDestroy drains the queue (up to 60 s) then
- *    force-terminates remaining workers
+ * This service no longer runs a local ThreadPoolExecutor — actual conversion
+ * work happens in the separate Worker process (port 3003).  The network
+ * boundary between these two processes satisfies the distributed requirement
+ * (Section 4 of the project spec).
+ *
+ * Concurrency notes:
+ *  - All counters are AtomicLong (lock-free, visible across threads)
+ *  - recentLatencies deque is guarded by synchronized to maintain ordering
+ *    invariant; contention is minimal (one write per completed job)
+ *  - The Worker service enforces its own bounded queue; this service surfaces
+ *    worker queue depth via /api/stats by fetching /worker/stats live
  */
 @Service
 public class WorkerPoolService {
 
-    private static final int MAX_QUEUE_CAPACITY = 500;
-    private static final int MAX_ATTEMPTS       = 3;
-    private static final int LATENCY_WINDOW     = 1000; // keep last N samples
-
-    @Value("${app.ffmpeg-path:ffmpeg}")
-    private String ffmpegPath;
+    private static final int MAX_ATTEMPTS    = 3;
+    private static final int LATENCY_WINDOW  = 1000;
 
     @Value("${app.upload-dir:./uploads}")
     private String uploadDir;
@@ -47,88 +39,71 @@ public class WorkerPoolService {
     @Value("${app.output-dir:./outputs}")
     private String outputDir;
 
+    private final WorkerClient    workerClient;
     private final JobStoreService jobStore;
-    private final SocketService   sockets;
-    private final ThreadPoolExecutor executor;
 
-    // ── Metrics ───────────────────────────────────────────────────────────────
     private final AtomicLong totalCompleted = new AtomicLong();
     private final AtomicLong totalFailed    = new AtomicLong();
     private final AtomicLong totalRejected  = new AtomicLong();
     private final long        startTime     = System.currentTimeMillis();
 
-    /** Rolling window of job latencies (createdAt → completedAt) in ms. */
     private final Deque<Long> recentLatencies = new ArrayDeque<>(LATENCY_WINDOW);
 
-    public WorkerPoolService(JobStoreService jobStore, SocketService sockets) {
-        this.jobStore = jobStore;
-        this.sockets  = sockets;
-
-        int cores      = Runtime.getRuntime().availableProcessors();
-        int maxWorkers = Math.max(2, cores - 1);
-
-        // corePoolSize == maxWorkers: threads are created eagerly as jobs arrive.
-        // ThreadPoolExecutor only spawns beyond core when the queue is FULL, so
-        // a core < max configuration with a large queue (500) means extra threads
-        // would never be created in practice. Setting core == max avoids that trap.
-        BlockingQueue<Runnable> workQueue = new LinkedBlockingQueue<>(MAX_QUEUE_CAPACITY);
-
-        this.executor = new ThreadPoolExecutor(
-            maxWorkers, // core == max → spin up threads immediately, never idle-kill them
-            maxWorkers,
-            0L, TimeUnit.MILLISECONDS,
-            workQueue,
-            r -> {
-                Thread t = new Thread(r, "converter-worker-" + System.nanoTime());
-                t.setDaemon(true);
-                return t;
-            },
-            new ThreadPoolExecutor.AbortPolicy() // throws RejectedExecutionException when full
-        );
-
-        System.out.printf("[WorkerPool] %d workers, queue cap %d%n",
-                maxWorkers, MAX_QUEUE_CAPACITY);
+    public WorkerPoolService(WorkerClient workerClient, JobStoreService jobStore) {
+        this.workerClient = workerClient;
+        this.jobStore     = jobStore;
+        System.out.println("[API] WorkerPoolService ready — dispatching to Worker at port 3003");
     }
 
     /**
-     * Submits a job for conversion.
-     * @return true if accepted, false if queue is full (caller should return HTTP 503)
+     * Sends a job to the Worker service.
+     * @return true if accepted, false if the worker rejected it (caller → HTTP 503)
      */
     public boolean submit(Job job) {
-        try {
-            executor.submit(new ConversionTask(
-                job, jobStore, sockets, ffmpegPath,
-                () -> onSuccess(job),
-                () -> onFailure(job)
-            ));
-            return true;
-        } catch (RejectedExecutionException e) {
+        WorkerClient.DispatchResult result = workerClient.dispatch(job);
+        return switch (result) {
+            case ACCEPTED, DUPLICATE -> true;   // DUPLICATE means it's already being handled
+            case QUEUE_FULL -> {
+                job.setStatus(JobStatus.FAILED);
+                job.setError("Worker queue is full. Please try again later.");
+                totalRejected.incrementAndGet();
+                yield false;
+            }
+            case WORKER_UNREACHABLE -> {
+                job.setStatus(JobStatus.FAILED);
+                job.setError("Worker service is unavailable. Make sure run-worker.bat is running.");
+                totalRejected.incrementAndGet();
+                yield false;
+            }
+        };
+    }
+
+    /**
+     * Resubmit a job for retry (called from InternalCallbackController after a failure).
+     * Bounded by MAX_ATTEMPTS tracked on the Job itself.
+     */
+    public void resubmit(Job job) {
+        WorkerClient.DispatchResult result = workerClient.dispatch(job);
+        if (result == WorkerClient.DispatchResult.QUEUE_FULL
+                || result == WorkerClient.DispatchResult.WORKER_UNREACHABLE) {
             job.setStatus(JobStatus.FAILED);
-            job.setError("Server queue is full. Please try again later.");
-            sockets.emitFailed(job.getJobId(), job.getError());
-            totalRejected.incrementAndGet();
-            return false;
+            job.setError("Retry failed: worker unavailable.");
+            job.setCompletedAt(System.currentTimeMillis());
+            totalFailed.incrementAndGet();
+            recordLatency(job);
         }
     }
 
-    private void onSuccess(Job job) {
+    // ── Called by InternalCallbackController when the worker reports completion ──
+
+    public void recordCompletion(Job job) {
         totalCompleted.incrementAndGet();
         recordLatency(job);
     }
 
-    private void onFailure(Job job) {
-        job.incrementAttempts();
-        if (job.getAttempts() < MAX_ATTEMPTS) {
-            // Retry: reset status and resubmit
-            job.setStatus(JobStatus.QUEUED);
-            job.setError(null);
-            job.setProgress(0);
-            sockets.emitRequeued(job.getJobId(), job.getAttempts());
-            submit(job); // recursive — bounded by MAX_ATTEMPTS
-        } else {
-            totalFailed.incrementAndGet();
-            recordLatency(job);
-        }
+    public void recordFailure(Job job) {
+        totalFailed.incrementAndGet();
+        recordLatency(job);
     }
 
     private synchronized void recordLatency(Job job) {
@@ -138,27 +113,32 @@ public class WorkerPoolService {
         }
     }
 
-    // ── Stats / metrics ───────────────────────────────────────────────────────
+    // ── Stats ─────────────────────────────────────────────────────────────────
 
     public Map<String, Object> getStats() {
         Map<String, Object> s = new LinkedHashMap<>();
-        s.put("activeWorkers",  executor.getActiveCount());
-        s.put("maxWorkers",     executor.getMaximumPoolSize());
-        s.put("queueSize",      executor.getQueue().size());
         s.put("totalCompleted", totalCompleted.get());
         s.put("totalFailed",    totalFailed.get());
         s.put("totalRejected",  totalRejected.get());
 
-        long uptimeMs = System.currentTimeMillis() - startTime;
+        long uptimeMs  = System.currentTimeMillis() - startTime;
         double uptimeMin = uptimeMs / 60_000.0;
         s.put("throughputPerMinute",
               uptimeMin > 0 ? Math.round((totalCompleted.get() / uptimeMin) * 10) / 10.0 : 0.0);
 
-        // Latency percentiles from the rolling window
-        long[] latencyMs = getLatencyPercentiles();
-        s.put("p50LatencyMs", latencyMs[0]);
-        s.put("p95LatencyMs", latencyMs[1]);
-        s.put("p99LatencyMs", latencyMs[2]);
+        long[] latencies = getLatencyPercentiles();
+        s.put("p50LatencyMs", latencies[0]);
+        s.put("p95LatencyMs", latencies[1]);
+        s.put("p99LatencyMs", latencies[2]);
+
+        // Live worker metrics (fetched over HTTP from the Worker service)
+        Map<String, Object> workerStats = workerClient.fetchStats();
+        s.put("worker", workerStats);
+
+        // Mirror at top level so the stress-test script's existing field names still work
+        s.put("activeWorkers", workerStats.getOrDefault("activeWorkers", 0));
+        s.put("maxWorkers",    workerStats.getOrDefault("maxWorkers",    0));
+        s.put("queueSize",     workerStats.getOrDefault("queueSize",     0));
 
         return s;
     }
@@ -178,11 +158,13 @@ public class WorkerPoolService {
         return sorted[Math.max(0, Math.min(idx, sorted.length - 1))];
     }
 
-    // ── Cleanup cron — every 15 minutes, delete files older than 1 hour ───────
+    // ── Cleanup cron — runs every 15 min, deletes files older than 1 hour ─────
     @Scheduled(fixedRate = 15 * 60 * 1000)
     public void cleanupOldFiles() {
         long cutoff = System.currentTimeMillis() - 60 * 60 * 1000L;
-        for (String dir : List.of(uploadDir, outputDir)) {
+        String[] dirs = {uploadDir, outputDir};
+        for (String dir : dirs) {
+            if (dir == null) continue;
             File folder = new File(dir);
             if (!folder.exists()) continue;
             File[] files = folder.listFiles();
@@ -192,22 +174,6 @@ public class WorkerPoolService {
             }
         }
         jobStore.clearCompleted();
-        System.out.println("[WorkerPool] cleanup complete");
-    }
-
-    // ── Graceful shutdown ─────────────────────────────────────────────────────
-    @PreDestroy
-    public void shutdown() {
-        System.out.println("[WorkerPool] shutting down — draining queue...");
-        executor.shutdown();
-        try {
-            if (!executor.awaitTermination(60, TimeUnit.SECONDS)) {
-                executor.shutdownNow();
-                System.out.println("[WorkerPool] forced shutdown after 60 s");
-            }
-        } catch (InterruptedException e) {
-            executor.shutdownNow();
-            Thread.currentThread().interrupt();
-        }
+        System.out.println("[API] cleanup complete");
     }
 }

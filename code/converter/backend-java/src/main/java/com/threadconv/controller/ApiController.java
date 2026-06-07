@@ -13,6 +13,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.*;
 import java.nio.file.*;
+import java.security.MessageDigest;
 import java.util.*;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -65,16 +66,34 @@ public class ApiController {
         List<Map<String, Object>> created = new ArrayList<>();
 
         for (MultipartFile file : files) {
+            // ── Deduplication: skip re-conversion of an identical file ────────
+            byte[] bytes = file.getBytes();
+            String contentKey = sha256Hex(bytes) + ":" + targetFormat;
+
+            Job existing = jobStore.findActiveByContentKey(contentKey);
+            if (existing != null) {
+                System.out.printf("[Upload] Duplicate detected — reusing job %s for %s%n",
+                        existing.getJobId(), file.getOriginalFilename());
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("jobId",        existing.getJobId());
+                row.put("originalName", file.getOriginalFilename());
+                row.put("status",       existing.getStatus().name().toLowerCase());
+                row.put("deduplicated", true);
+                created.add(row);
+                continue;
+            }
+
+            // ── New job ───────────────────────────────────────────────────────
             String jobId          = UUID.randomUUID().toString();
             String outputFilename = jobId + "." + targetFormat;
             String inputPath      = uploadDir + "/" + jobId + "-" + file.getOriginalFilename();
             String outputPath     = outputDir + "/" + outputFilename;
 
-            // Save upload to disk
-            file.transferTo(Path.of(inputPath));
+            // Save upload to disk (bytes already in memory from hash computation)
+            Files.write(Path.of(inputPath), bytes);
 
             Job job = new Job(jobId, file.getOriginalFilename(), inputPath,
-                              outputPath, outputFilename, targetFormat, file.getSize());
+                              outputPath, outputFilename, targetFormat, file.getSize(), contentKey);
             jobStore.put(job);
 
             boolean accepted = workerPool.submit(job);
@@ -192,7 +211,19 @@ public class ApiController {
         return ResponseEntity.ok(Map.of("ok", true));
     }
 
-    // ── Helper ────────────────────────────────────────────────────────────────
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private static String sha256Hex(byte[] data) {
+        try {
+            byte[] hash = MessageDigest.getInstance("SHA-256").digest(data);
+            StringBuilder sb = new StringBuilder(hash.length * 2);
+            for (byte b : hash) sb.append(String.format("%02x", b));
+            return sb.toString();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     private static Map<String, Object> jobToMap(Job j) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("jobId",           j.getJobId());
