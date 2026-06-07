@@ -36,7 +36,7 @@ Open a terminal in the project root (where this file lives), then:
 
 **Windows:**
 ```
-run-backend.bat
+.\run-backend.bat
 ```
 
 **Mac / Linux:**
@@ -67,7 +67,7 @@ Open a **second terminal** in the project root:
 
 **Windows:**
 ```
-run-frontend.bat
+.\run-frontend.bat
 ```
 
 **Mac / Linux:**
