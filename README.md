@@ -63,6 +63,7 @@ node failure-injection.js      # two injected failure scenarios (A + B)
 | [CONCURRENCY-SCORECARD.md](CONCURRENCY-SCORECARD.md) | Scorecard + shared-state inventory + sizing rationale |
 | [DECISION-MEMO.md](DECISION-MEMO.md) | Architecture decision memo (Q1–Q5) |
 | [FAILURE-INJECTION.md](FAILURE-INJECTION.md) | Two injected failure scenarios + how to reproduce |
+| [PRESENTATION.md](PRESENTATION.md) | 3-speaker demo script (say/show cues, course tie-ins) |
 | [STRESS-TESTING.md](STRESS-TESTING.md) | Load/stress test guide |
 | [evidence/](evidence/) | Captured failure-injection output, API logs, load-test table |
 | [SETUP.md](SETUP.md) · [QUICKSTART.md](QUICKSTART.md) · [COMMANDS.md](COMMANDS.md) | Setup & run references |
