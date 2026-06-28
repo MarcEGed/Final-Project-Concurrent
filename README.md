@@ -54,6 +54,21 @@ node failure-injection.js      # two injected failure scenarios (A + B)
 
 ---
 
+## 📚 Submission artifacts
+
+| Document | What |
+|---|---|
+| [ARCHITECTURE.md](ARCHITECTURE.md) | System design, components, ports, change log |
+| [DIAGRAMS.md](DIAGRAMS.md) | Architecture, async sequence, failure-propagation diagrams |
+| [CONCURRENCY-SCORECARD.md](CONCURRENCY-SCORECARD.md) | Scorecard + shared-state inventory + sizing rationale |
+| [DECISION-MEMO.md](DECISION-MEMO.md) | Architecture decision memo (Q1–Q5) |
+| [FAILURE-INJECTION.md](FAILURE-INJECTION.md) | Two injected failure scenarios + how to reproduce |
+| [STRESS-TESTING.md](STRESS-TESTING.md) | Load/stress test guide |
+| [evidence/](evidence/) | Captured failure-injection output, API logs, load-test table |
+| [SETUP.md](SETUP.md) · [QUICKSTART.md](QUICKSTART.md) · [COMMANDS.md](COMMANDS.md) | Setup & run references |
+
+---
+
 # 🚀 Features
 
 ## 📤 Bulk File Upload
