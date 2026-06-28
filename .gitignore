@@ -15,6 +15,10 @@ bin/
 uploads/
 outputs/
 
+# Test-harness scratch dirs (auto-generated + auto-cleaned)
+stress-files/
+.fi-tmp/
+
 # OS / tooling
 .DS_Store
 Thumbs.db

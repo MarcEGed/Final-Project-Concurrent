@@ -1,0 +1,13 @@
+THREADCONV — Scenario A: API-side log (distributed trace via jobId correlation ID)
+===============================================================================
+
+--- FAILED request (worker down): jobId=0664716b ---
+[API] Dispatching jobId=0664716b-272f-4c80-8dcc-29bbb765e0b8 to http://localhost:3003
+[API] Worker unreachable for jobId=0664716b-272f-4c80-8dcc-29bbb765e0b8: null
+
+--- RECOVERED/SUCCESSFUL request (after restart): jobId=039fa3f1 ---
+[API] Dispatching jobId=039fa3f1-d026-4b0a-a769-1904be6af334 to http://localhost:3003
+[API] PROGRESS jobId=039fa3f1-d026-4b0a-a769-1904be6af334    5%  Preparing video conversion...
+[API] PROGRESS jobId=039fa3f1-d026-4b0a-a769-1904be6af334   11%  Converting video... 11%
+[API] PROGRESS jobId=039fa3f1-d026-4b0a-a769-1904be6af334  100%  Video conversion complete
+[API] DONE     jobId=039fa3f1-d026-4b0a-a769-1904be6af334

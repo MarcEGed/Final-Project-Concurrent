@@ -1,12 +1,56 @@
-# ⚙️ Multithreaded Web File Converter
+# ⚙️ THREADCONV — Multithreaded Web File Converter
 
-A scalable web-based file conversion system using multithreading, job queues, and real-time processing.
+A scalable, **distributed** web-based file-conversion system using multithreading,
+a bounded job queue, an API↔Worker network boundary, and real-time progress.
 
-This project demonstrates:
-- concurrency
-- multithreading
-- producer–consumer architecture
-- scalable backend design
+> **Course project — Concurrency, Parallelism & Distributed Systems (Dr. M. Aoude).**
+> **Selected topic: B — Machine-Learning / Data-Analysis Pipeline.** The app is a
+> three-stage pipeline — **validate/pre-process** (upload validation + content
+> hashing) → **convert** (the CPU-bound stage, parallelised across a bounded
+> worker pool) → **post-process/store** (write output, emit completion). It
+> includes the required sequential-vs-parallel benchmark for the CPU-bound step.
+
+This project demonstrates concurrency, multithreading, a producer–consumer
+architecture, bounded resources/backpressure, a real distributed network
+boundary, idempotency, and failure recovery.
+
+---
+
+## 🚀 Run it (local, no cloud)
+
+**Prerequisites:** JDK 21 (`JAVA_HOME` must point to it), Node.js, FFmpeg on `PATH`.
+
+```powershell
+# set the JDK for every terminal (or set it permanently in System env vars)
+$env:JAVA_HOME = "C:\Program Files\Eclipse Adoptium\jdk-21.0.11.10-hotspot"
+```
+
+| Terminal | Command (repo root) | Serves |
+|---|---|---|
+| 1 — Worker  | `.\run-worker.bat`   | conversion engine, :3003 |
+| 2 — API     | `.\run-backend.bat`  | REST :3001 + Socket.IO :3002 |
+| 3 — Frontend| `.\run-frontend.bat` | React UI, **http://localhost:3000** |
+
+Start Worker → API → Frontend. Full detail in [SETUP.md](SETUP.md) and
+[ARCHITECTURE.md](ARCHITECTURE.md).
+
+## 🧪 Test it
+
+```powershell
+cd code
+node stress-advanced.js        # concurrency / load test (50 unique videos)
+node failure-injection.js      # two injected failure scenarios (A + B)
+```
+
+- **Load test & metrics:** [STRESS-TESTING.md](STRESS-TESTING.md) ·
+  results table in [evidence/load-test.md](evidence/load-test.md)
+  (50 jobs, 100% success, p50 2556 / p95 4664 / p99 4838 ms).
+- **Failure injection:** [FAILURE-INJECTION.md](FAILURE-INJECTION.md) — (A) worker
+  kill → fallback → recovery; (B) bounded-queue overload → 503 backpressure.
+  Captured output in [evidence/](evidence/).
+- **Live metrics** (throughput, p50/p95/p99, queue depth, completed/failed/rejected):
+  `GET http://localhost:3001/api/stats`
+- **Sequential vs parallel benchmark:** `GET http://localhost:3001/api/benchmark?count=8`
 
 ---
 
