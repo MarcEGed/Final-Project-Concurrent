@@ -72,10 +72,17 @@ async function generateTestFiles() {
         filename = `stress-file-${i + 1}-${fileType}.${ext}`;
         filepath = path.join(testDir, filename);
         
-        // Generate a real 3-second test video using FFmpeg (testsrc pattern + sine audio)
+        // Generate a real 3-second test video using FFmpeg (testsrc pattern + sine audio).
+        // IMPORTANT: each file must be byte-unique, otherwise the API's content-hash
+        // deduplication (sha256(bytes)+targetFormat) collapses all N uploads into a
+        // single job and the test never actually exercises concurrency. We vary the
+        // audio frequency per file and stamp unique metadata so every output differs.
         try {
+          const uniqueFreq = 400 + i * 7;            // distinct audio per file
+          const uniqueTag  = `stress-${i}-${Date.now()}`;
           execSync(
-            `ffmpeg -f lavfi -i testsrc=s=320x240:d=3 -f lavfi -i sine=f=1000:d=3 -pix_fmt yuv420p -y "${filepath}"`,
+            `ffmpeg -f lavfi -i testsrc=s=320x240:d=3 -f lavfi -i sine=f=${uniqueFreq}:d=3 ` +
+            `-pix_fmt yuv420p -metadata comment="${uniqueTag}" -y "${filepath}"`,
             { stdio: 'pipe' }
           );
         } catch (e) {

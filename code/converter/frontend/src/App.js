@@ -50,6 +50,37 @@ function elapsed(job) {
   return `${s}s`;
 }
 
+// ── Job list merge ──────────────────────────────────────────────────────────
+// Higher rank = more advanced lifecycle state. Used so a stale "queued" stub
+// from an upload response can never overwrite a job that a Socket.IO event has
+// already advanced to processing/completed/failed.
+const STATUS_RANK = { queued: 0, processing: 1, completed: 2, failed: 2 };
+
+// Merge freshly-uploaded job stubs into the existing list, keyed by jobId.
+// Guarantees: no duplicate jobIds, never downgrades an already-advanced status,
+// and keeps new jobs visible at the top of the list (in upload order).
+function mergeJobs(prev, incoming) {
+  const byId = new Map(prev.map((j) => [j.jobId, j]));
+  for (const nj of incoming) {
+    const ex = byId.get(nj.jobId);
+    if (!ex) {
+      byId.set(nj.jobId, nj);
+    } else if ((STATUS_RANK[nj.status] ?? 0) >= (STATUS_RANK[ex.status] ?? 0)) {
+      byId.set(nj.jobId, { ...ex, ...nj });
+    }
+    // else: keep the more-advanced existing job untouched
+  }
+  const seen = new Set();
+  const newFirst = [];
+  for (const nj of incoming) {
+    if (seen.has(nj.jobId)) continue;   // dedupe identical-content uploads
+    seen.add(nj.jobId);
+    newFirst.push(byId.get(nj.jobId));
+  }
+  const rest = prev.filter((j) => !seen.has(j.jobId));
+  return [...newFirst, ...rest];
+}
+
 // ── StatusBadge ───────────────────────────────────────────────────────────────
 function StatusBadge({ status }) {
   const map = {
@@ -172,6 +203,10 @@ export default function App() {
 
   // ── Socket listeners ──────────────────────────────────────────────────────
   useEffect(() => {
+    // socket is created at import with autoConnect, so it may already be
+    // connected before this listener registers — seed from current state so
+    // the indicator doesn't get stuck on "Disconnected" while events flow.
+    setSocketConnected(socket.connected);
     socket.on('connect', () => setSocketConnected(true));
     socket.on('disconnect', () => setSocketConnected(false));
 
@@ -222,7 +257,11 @@ export default function App() {
     setUploadProgress(0);
     try {
       const newJobs = await uploadFiles(stagedFiles, targetFormat, setUploadProgress);
-      setJobs((prev) => [...newJobs, ...prev]);
+      // Merge instead of blind-prepend: fast conversions can emit job:done during
+      // the upload await, so the stale "queued" stubs must not clobber jobs that
+      // already advanced. Then reconcile with authoritative (deduped) server state.
+      setJobs((prev) => mergeJobs(prev, newJobs));
+      fetchJobs().then(setJobs).catch(() => {});
       setStagedFiles([]);
       showToast(`${newJobs.length} job${newJobs.length > 1 ? 's' : ''} queued`, 'success');
     } catch (e) {
