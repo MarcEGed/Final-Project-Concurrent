@@ -6,7 +6,7 @@ How to run the stress test, what it does, and how to read the results.
 
 ## Prerequisites
 
-- Java backend is running (see `SETUP.md`)
+- Java backend is running (see `README.md`)
 - Node.js is installed (`node -v` should work)
 - You're in the `code/` directory when you run the test
 

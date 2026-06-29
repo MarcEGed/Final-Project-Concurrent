@@ -260,11 +260,11 @@ app.ffmpeg-path=ffmpeg
 
 ### Session 3 — Gradle wrapper, run scripts, repo cleanup
 - Generated `gradlew.bat` (Gradle 8.10.2) — collaborators no longer need Gradle installed
-- Created `run-backend.bat`, `run-backend.sh`, `run-frontend.bat`, `run-frontend.sh`
-- All scripts use `%~dp0` / `$(dirname "$0")` — work from any clone location
+- Created `run-backend.bat`, `run-frontend.bat`
+- All scripts use `%~dp0` — work from any clone location
 - Cleaned `.gitignore`: added `bin/`, `*.class`, `*.tmp`, `.idea/`, `*.iml`, `Thumbs.db`
 - Deleted stale files: `code/howToRun.md`, `code/STRESS_TESTING.md`, `code/VIDEO_CONVERSION.md`, `code/start.bat`
-- Created `SETUP.md`, `ARCHITECTURE.md`, `STRESS-TESTING.md`, `COMMANDS.md`, `QUICKSTART.md`
+- Created `ARCHITECTURE.md`, `STRESS-TESTING.md`
 
 ### Session 4 — Frontend theme & layout
 - Full CSS rewrite: dark theme (`#0a0a0a` background, `#b91c1c` dark red accent, `#f0ede8` text)
@@ -282,8 +282,8 @@ app.ffmpeg-path=ffmpeg
 - Added idempotency guard in Worker (`ConcurrentHashMap.putIfAbsent`)
 - `jobId` flows through all log lines and HTTP calls as distributed correlation ID
 - `/api/stats` now includes a `worker` nested object with live Worker metrics
-- Created `run-worker.bat` and `run-worker.sh`
-- Updated `QUICKSTART.md` with 4-terminal startup instructions
+- Created `run-worker.bat`
+- Documented the 3-terminal startup (Worker → API → Frontend) in `README.md`
 
 ### Session 5 (continued) — Sequential vs parallel benchmark
 - Added `GET /api/benchmark?count=N` endpoint (`BenchmarkController.java`)
@@ -303,4 +303,3 @@ app.ffmpeg-path=ffmpeg
 | Socket.IO event names | Same: `job:processing`, `job:progress`, `job:done`, `job:failed`, `job:requeued` |
 | `stress-advanced.js` | Unchanged — works against Java backend |
 | FFmpeg usage | Same shell commands, same format support |
-| `code/converter/backend/` | Still present, not used — original Node.js implementation |

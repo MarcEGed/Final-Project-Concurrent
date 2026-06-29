@@ -1,27 +1,4 @@
-THREADCONV — Failure Injection   (2026-06-28T12:11:16.277Z)
-
-══════════════════════════════════════════════════════════════
- SCENARIO A — Worker process kill → fallback → recovery
-══════════════════════════════════════════════════════════════
-
-[1] Worker health before kill: OK ✅
-
-[2] Killing the Worker process...
-    taskkill PID 21408 → worker is now DOWN
-    Worker health after kill: DOWN ✅ (as expected)
-
-[3] Uploading a job while the Worker is DOWN (expect fallback → FAILED)...
-    Upload HTTP response job: {"status":"failed","originalName":"fi-A-down.mp4","jobId":"27a9233c-12da-4117-bb78-b17dde1b5e53"}
-    Job state: status=failed  error="Worker service is unavailable. Make sure run-worker.bat is running."
-    Stats: totalRejected=35  (fallback counted as rejected)
-
-[4] Restarting the Worker...
-    Worker health after restart: OK ✅ (recovered)
-
-[5] Uploading another job after recovery (expect COMPLETED)...
-    Job state: status=completed  (751789d9-9842-4e7d-bd70-789b0b774f2d)
-
-  RESULT: ✅ failed-while-down then recovered-after-restart — timeout/fallback + recovery proven
+THREADCONV — Failure Injection   (2026-06-29T13:02:34.925Z)
 
 ══════════════════════════════════════════════════════════════
  SCENARIO B — Bounded-queue overload → 503 backpressure
@@ -35,5 +12,5 @@ THREADCONV — Failure Injection   (2026-06-28T12:11:16.277Z)
     burst submitted        : 240
     accepted (queued/done) : 207
     rejected at upload     : 33
-    totalRejected (stats)  : 35 → 68  (Δ 33)
+    totalRejected (stats)  : 3 → 36  (Δ 33)
     ✅ queue overflowed and rejected excess with 503 — bounded resources proven
